@@ -1,0 +1,97 @@
+import requests
+from bs4 import BeautifulSoup
+import time
+
+def fetch_olx_products(url, max_pages=5):
+    all_products = []
+    page_num = 1
+
+    while page_num <= max_pages:
+        try:
+            # Construct the URL for the current page
+            if page_num > 1:
+                page_url = f"{url}?page={page_num}"
+            else:
+                page_url = url
+
+            print(f"Fetching page {page_num}...")
+            response = requests.get(page_url, timeout=10)
+            response.raise_for_status()  # Raise an exception for bad status codes
+
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            # Find the main list of products
+            products_list = soup.find('ul', class_='_266Ly _10aCo', attrs={'data-aut-id': 'itemsList1'})
+
+            if not products_list:
+                print(f"No products list found on page {page_num}. Stopping.")
+                break
+
+            page_products = []
+            # Iterate through each list item representing a product
+            for item in products_list.find_all('li', class_='_1DNjI', attrs={'data-aut-id': 'itemBox3'}):
+                product_data = {}
+
+                title_tag = item.find('span', class_='_2poNJ', attrs={'data-aut-id': 'itemTitle'})
+                product_data['title'] = title_tag.text if title_tag else 'N/A'
+
+                price_tag = item.find('span', class_='_2Ks63', attrs={'data-aut-id': 'itemPrice'})
+                product_data['price'] = price_tag.text if price_tag else 'N/A'
+
+                location_tag = item.find('span', class_='_2VQu4', attrs={'data-aut-id': 'item-location'})
+                product_data['location'] = location_tag.text if location_tag else 'N/A'
+
+                date_tag = item.find('span', class_='_2jcGx')
+                product_data['date_published'] = date_tag.text.strip() if date_tag else 'N/A'
+
+                link_tag = item.find('a', class_='_2cbZ2') or item.find('a')
+                product_data['url'] = link_tag['href'] if link_tag and 'href' in link_tag.attrs else 'N/A'
+
+                details_tag = item.find('span', class_='YBbhy', attrs={'data-aut-id': 'itemDetails'})
+                product_data['details'] = details_tag.text if details_tag else 'N/A'
+
+                noscript_img_tag = item.find('noscript')
+                if noscript_img_tag and noscript_img_tag.img and 'src' in noscript_img_tag.img.attrs:
+                    product_data['image_src'] = noscript_img_tag.img['src']
+                else:
+                    product_data['image_src'] = 'N/A'
+
+                page_products.append(product_data)
+
+            if not page_products:
+                print(f"No products found on page {page_num}. Stopping.")
+                break
+
+            all_products.extend(page_products)
+
+            # Check for a "next page" link to determine if there are more pages
+            next_button = soup.find('button', class_='rui-39-p', attrs={'data-aut-id': 'btnNext'})
+            if not next_button:
+                print("No next page button found. Stopping.")
+                break
+
+            page_num += 1
+            time.sleep(2) # Be polite and add a delay between requests
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching page {page_num}: {e}")
+            break
+        except Exception as e:
+            print(f"An unexpected error occurred on page {page_num}: {e}")
+            break
+
+    return all_products
+
+if __name__ == "__main__":
+    # Example usage:
+    search_url = "https://www.olx.in/items/q-car-cover?isSearchCall=true&sorting=asc-price" 
+    scraped_products = fetch_olx_products(search_url, max_pages=3)
+
+    if scraped_products:
+        print(f"\nFound {len(scraped_products)} products:")
+        for i, product in enumerate(scraped_products):
+            print(f"\n--- Product {i+1} ---")
+            for key, value in product.items():
+                print(f"{key}: {value}")
+    else:
+        print("No products were scraped.")
